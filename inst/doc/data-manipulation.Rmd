@@ -1,0 +1,120 @@
+---
+title: "Data manipulation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Data manipulation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+library(basetable)
+```
+
+`basetable` uses compact verbs with explicit arguments. The same functions
+work in nested expressions and native R pipelines, always returning a
+the native engine without modifying the input.
+
+## A compact pipeline
+
+```{r}
+mtcars |>
+  subset(cyl >= 6, select = c("mpg", "hp", "wt", "cyl")) |>
+  transform(power = hp / wt) |>
+  orderrows(by = c("cyl", "mpg"), decreasing = c(FALSE, TRUE))
+```
+
+`orderrows()` accepts one direction per column. This makes a
+mixed ascending/descending order explicit without a descending-expression
+mini-language.
+
+```{r}
+orderrows(
+  mtcars,
+  by = c("cyl", "mpg"),
+  decreasing = c(FALSE, TRUE)
+) |>
+  firstrows(6)
+```
+
+## Values from the calling function
+
+Transformation expressions can combine table columns with ordinary values
+defined by the calling function. Newly created columns are available to later
+expressions in the same call.
+
+```{r}
+scorecars <- function(data, horsepowerweight = 0.7) {
+  data |>
+    transform(
+      weightedhp = hp * horsepowerweight,
+      score = weightedhp / wt
+    ) |>
+    orderrows("score", decreasing = TRUE)
+}
+
+scorecars(mtcars) |>
+  pick(c("mpg", "hp", "wt", "score")) |>
+  firstrows(5)
+```
+
+## Grouped summaries
+
+```{r}
+aggregate(airquality, by = "Month", value = c("Ozone", "Temp"), fun = mean, na.rm = TRUE)
+```
+
+The expression-oriented equivalent stays compact when several summaries use
+different functions.
+
+```{r}
+summaries(
+  airquality,
+  ozone = mean(Ozone, na.rm = TRUE),
+  temperature = mean(Temp, na.rm = TRUE),
+  days = length(Temp),
+  by = "Month"
+)
+```
+
+## Joins
+
+```{r}
+merge(
+  data.frame(id = 1:3, x = letters[1:3]),
+  data.frame(id = c(2, 3, 4), y = LETTERS[2:4]),
+  by = "id",
+  all = TRUE
+)
+```
+
+## Validation in a pipeline
+
+Assertions return the input invisibly when they pass, so a pipeline can fail
+close to the operation that violated its contract.
+
+```{r}
+cars <- mtcars |>
+  transform(car = rownames(mtcars)) |>
+  firstcols("car")
+
+assertcomplete(cars, c("car", "mpg", "cyl"))
+assertunique(cars, "car")
+assertrows(cars, mpg > 0)
+```
+
+## Explicit package calls
+
+A few compact names intentionally match base R or other table packages
+(`subset()`, `merge()`, `transform()`, `split()`). `basetable` does not ship
+dplyr-named verbs such as `filter()`, `select()`, or `mutate()`, so it can be
+attached alongside dplyr without shadowing its grammar. For the names it does
+share with other table packages, qualify the verb rather than changing the
+workflow grammar.
+
+```{r}
+mtcars |>
+  basetable::subset(cyl == 6) |>
+  basetable::pick(c("mpg", "hp", "wt")) |>
+  basetable::transform(power = hp / wt)
+```

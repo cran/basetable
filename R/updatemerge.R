@@ -1,0 +1,22 @@
+updatemerge <- function(x, y, by, cols = NULL) {
+  x_dt <- bt_as_data_frame(x)
+  y_dt <- bt_as_data_frame(y)
+  by <- bt_resolve_cols(x_dt, by)
+  bt_resolve_cols(y_dt, by)
+
+  if (is.null(cols)) {
+    cols <- setdiff(intersect(names(x_dt), names(y_dt)), by)
+  }
+  cols <- bt_resolve_cols(x_dt, cols)
+
+  y_first <- bt_as_data_frame(bt_engine_unique(y_dt, by = by, keep_all = TRUE))
+  idx <- bt_first_match(x_dt, y_first, by)
+
+  for (nm in cols) {
+    values <- y_first[[nm]][idx]
+    keep <- !is.na(idx)
+    x_dt[[nm]][keep] <- values[keep]
+  }
+
+  bt_as_data_table(x_dt)
+}

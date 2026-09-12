@@ -1,0 +1,67 @@
+---
+title: "Getting started"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+library(basetable)
+```
+
+`basetable` provides a base-style front end for tabular work with a
+native C++ table engine. The core design goals are explicit semantics, compact
+naming, and equal support for nested calls and native `|>` pipelines.
+
+## The canonical compact core
+
+Most workflows need only a small set of regular verbs:
+
+| Task | Canonical functions |
+|:--|:--|
+| Inspect | `preview()`, `describe()`, `missingness()` |
+| Keep rows | `subset()` |
+| Keep or remove columns | `pick()`, `drop()` |
+| Create columns | `transform()` |
+| Order rows | `orderrows()` |
+| Summarise | `aggregate()`, `summaries()`, `count()` |
+| Join | `merge()`, `antimerge()`, `semimerge()` |
+| Reshape | `tolong()`, `towide()` |
+| Validate | `assertcomplete()`, `assertunique()`, `assertrows()` |
+
+These are canonical names, not one layer of aliases among several grammars.
+Each function accepts a table as its first argument, uses character vectors
+for column specifications, and returns a `bt_table`. Those regular rules
+make pipelines compact for people and make function selection predictable for
+program-generating tools such as language models.
+
+The package is intentionally focused on in-memory table manipulation,
+exploration, and validation. Read and write files with base R or a dedicated
+I/O package, then pass the resulting data frame to basetable.
+Domain-specific parsing and validation remain the responsibility of focused
+packages.
+
+```{r}
+subset(mtcars, cyl == 6, select = c("mpg", "hp", "wt"))
+```
+
+```{r}
+mtcars |>
+  pick(c("mpg", "hp", "wt", "cyl")) |>
+  aggregate(by = "cyl", value = c("mpg", "hp"), fun = mean)
+```
+
+## Namespaces stay explicit
+
+Compact names intentionally overlap with base R and other table packages. If
+more than one is attached, qualify the function rather than introducing a new
+alias or changing grammars mid-pipeline.
+
+```{r}
+mtcars |>
+  basetable::subset(cyl == 6) |>
+  basetable::pick(c("mpg", "hp", "wt")) |>
+  basetable::transform(power = hp / wt)
+```
