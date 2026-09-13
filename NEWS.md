@@ -1,3 +1,37 @@
+# basetable 1.4.1
+
+## New features
+
+* `compact()` drops `NULL` elements from a list, keeping other falsy values
+  (`NA`, `0`, `""`) intact. The natural companion to `map()`/`foldr()` when
+  some calls legitimately return nothing (e.g. an empty API response) and the
+  `NULL`s need dropping before folding or row-binding the rest.
+
+## Fixes
+
+* `count(sort = TRUE)` now breaks ties (groups with equal counts) by
+  ascending group key instead of leaving them in the grouping engine's
+  internal enumeration order. That order was never part of the documented
+  contract and could silently change between `basetable` versions (it did,
+  between 1.3.1 and 1.4.0, as part of the grouping-key codec work), which
+  made `count(sort = TRUE)` output non-reproducible across versions for any
+  workflow that samples from, or otherwise depends on, row order among tied
+  counts.
+* The `benchmarking` vignette no longer hard-requires memory profiling: it
+  now checks `capabilities("profmem")` and falls back to timing-only
+  `bench::mark()` output (dropping the memory column/plot) when
+  `Rprofmem()` is unavailable, which was failing `R CMD check` on some
+  r-devel build machines.
+
+# basetable 1.4.0
+
+## New features
+
+* `as_basetable()` coerces a data frame, a list of equal-length columns, or a
+  matrix to the `basetable` class, and `is_basetable()` tests for it. Both are
+  now exported, so other packages can build directly on the `basetable` class
+  instead of relying on a verb to stamp it or reaching into internals.
+
 # basetable 1.3.2
 
 ## Documentation

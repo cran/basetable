@@ -11,6 +11,10 @@ have <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 HAVE_DT <- have("data.table")
 HAVE_DP <- have("dplyr")
 
+# Some check machines (notably certain r-devel builds) do not support
+# Rprofmem()-based memory profiling; bench::mark(memory = TRUE) errors there.
+HAVE_PROFMEM <- isTRUE(capabilities("profmem"))
+
 # Keep the vignette build quick; inst/benchmarks/benchmark-scale.R runs the
 # full size x cardinality matrix, and inst/benchmarks/make-readme-figures.R
 # regenerates the figures shown in the README.
@@ -42,7 +46,7 @@ if (HAVE_DT) {
 bench_one <- function(label, exprs) {
   keep <- c(TRUE, HAVE_DT, HAVE_DP)[seq_along(exprs)]
   exprs <- exprs[keep]
-  m <- bench::mark(exprs = exprs, iterations = REPS, check = FALSE, memory = TRUE)
+  m <- bench::mark(exprs = exprs, iterations = REPS, check = FALSE, memory = HAVE_PROFMEM)
   m$operation <- label
   m$engine    <- names(exprs)
   m
@@ -106,14 +110,23 @@ names(bt)[2:3] <- c("bt_ms", "bt_mb")
 tab <- merge(res, bt, by = "operation")
 tab$vs_time <- tab$median_ms / tab$bt_ms
 tab$vs_mem  <- tab$mem_mb / tab$bt_mb
-tab <- tab[order(tab$operation, tab$engine),
-           c("operation", "engine", "median_ms", "mem_mb", "vs_time")]
-for (col in c("median_ms", "mem_mb", "vs_time"))
+cols <- if (HAVE_PROFMEM) {
+  c("operation", "engine", "median_ms", "mem_mb", "vs_time")
+} else {
+  c("operation", "engine", "median_ms", "vs_time")
+}
+tab <- tab[order(tab$operation, tab$engine), cols]
+for (col in intersect(c("median_ms", "mem_mb", "vs_time"), names(tab)))
   tab[[col]] <- format(round(tab[[col]], 2), nsmall = 2)
+nms <- if (HAVE_PROFMEM) {
+  c("Operation", "Engine", "Median (ms)", "Mem (MB)", "vs basetable")
+} else {
+  c("Operation", "Engine", "Median (ms)", "vs basetable")
+}
 knitr::kable(
   tab, row.names = FALSE,
-  col.names = c("Operation", "Engine", "Median (ms)", "Mem (MB)", "vs basetable"),
-  align = c("l", "l", "r", "r", "r")
+  col.names = nms,
+  align = c("l", "l", "r", "r", "r")[seq_along(nms)]
 )
 
 ## ----plot-time, fig.cap="Median runtime by engine (lower is better). Each panel has its own scale."----
@@ -128,7 +141,10 @@ ggplot(res, aes(engine, median_ms, fill = engine)) +
   theme_minimal(base_size = 11) +
   theme(legend.position = "none", strip.text = element_text(face = "bold"))
 
-## ----plot-mem, fig.cap="Memory allocated by each expression, as reported by bench (lower is better)."----
+## ----mem-note, echo=FALSE, results='asis', eval=!HAVE_PROFMEM-----------------
+# cat("_Memory profiling (`Rprofmem()`) is not available on this system, so the memory comparison is omitted here. See the README or `inst/benchmarks/make-readme-figures.R` for a system where it is supported._\n")
+
+## ----plot-mem, eval=HAVE_PROFMEM, fig.cap="Memory allocated by each expression, as reported by bench (lower is better)."----
 ggplot(res, aes(engine, mem_mb, fill = engine)) +
   geom_col(width = 0.7) +
   geom_text(aes(label = ifelse(mem_mb < 1, sprintf("%.2f", mem_mb),
