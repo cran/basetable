@@ -1,6 +1,6 @@
 Package: basetable
 Title: Fast and Memory-Efficient Base R Table Manipulation
-Version: 1.4.2
+Version: 1.4.6
 Authors@R: 
     person("Imad", "El Badisy", email = "elbadisyimad@gmail.com", role = c("aut", "cre"))
 Description: A tabular data manipulation, exploration and validation toolkit
@@ -19,14 +19,14 @@ Encoding: UTF-8
 RoxygenNote: 7.3.3
 Depends: R (>= 4.2.0)
 Imports: parallel, stats, utils
-Suggests: bench, data.table, dplyr, ggplot2, knitr, rmarkdown, scales,
-        testthat (>= 3.0.0)
+Suggests: bench, collapse, data.table, dplyr, ggplot2, knitr,
+        rmarkdown, scales, testthat (>= 3.0.0), tidyr
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 SystemRequirements: C++17
 NeedsCompilation: yes
-Packaged: 2026-09-17 08:03:31 UTC; imad-el-badisy
+Packaged: 2026-11-13 17:29:48 UTC; imad-el-badisy
 Author: Imad El Badisy [aut, cre]
 Maintainer: Imad El Badisy <elbadisyimad@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-09-18 06:40:50 UTC
+Date/Publication: 2026-11-13 19:50:02 UTC

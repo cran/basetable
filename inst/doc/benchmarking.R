@@ -10,6 +10,7 @@ library(ggplot2)
 have <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 HAVE_DT <- have("data.table")
 HAVE_DP <- have("dplyr")
+HAVE_CL <- have("collapse")
 
 # Some check machines (notably certain r-devel builds) do not support
 # Rprofmem()-based memory profiling; bench::mark(memory = TRUE) errors there.
@@ -23,6 +24,12 @@ REPS  <- as.integer(Sys.getenv("BT_VIGNETTE_REPS", "9"))
 
 .old_threads <- getOption("basetable.threads")
 basetable::setthreads(percent = 100)
+
+# collapse defaults to one thread; give it the same budget as basetable.
+if (HAVE_CL) {
+  .old_collapse <- collapse::get_collapse("nthreads")
+  collapse::set_collapse(nthreads = getOption("basetable.threads", 1L))
+}
 
 ## ----data---------------------------------------------------------------------
 set.seed(1)
@@ -44,7 +51,7 @@ if (HAVE_DT) {
 
 ## ----run----------------------------------------------------------------------
 bench_one <- function(label, exprs) {
-  keep <- c(TRUE, HAVE_DT, HAVE_DP)[seq_along(exprs)]
+  keep <- c(TRUE, HAVE_DT, HAVE_DP, HAVE_CL)[seq_along(exprs)]
   exprs <- exprs[keep]
   m <- bench::mark(exprs = exprs, iterations = REPS, check = FALSE, memory = HAVE_PROFMEM)
   m$operation <- label
@@ -56,33 +63,40 @@ marks <- list(
   bench_one("filter", list(
     basetable  = quote(basetable::subset(d, x > 0.5)),
     data.table = quote(dt[x > 0.5]),
-    dplyr      = quote(dplyr::filter(d, x > 0.5)))),
+    dplyr      = quote(dplyr::filter(d, x > 0.5)),
+    collapse   = quote(collapse::fsubset(d, x > 0.5)))),
   bench_one("sort (string key)", list(
     basetable  = quote(basetable::orderrows(d, by = c("g", "x"))),
     data.table = quote(data.table::setorder(data.table::copy(dt), g, x)),
-    dplyr      = quote(dplyr::arrange(d, g, x)))),
+    dplyr      = quote(dplyr::arrange(d, g, x)),
+    collapse   = quote(collapse::roworderv(d, c("g", "x"))))),
   bench_one("distinct", list(
     basetable  = quote(basetable::uniquerows(d, cols = "g")),
     data.table = quote(unique(dt[, list(g)])),
-    dplyr      = quote(dplyr::distinct(d, g)))),
+    dplyr      = quote(dplyr::distinct(d, g)),
+    collapse   = quote(collapse::funique(collapse::get_vars(d, "g"))))),
   bench_one("count by group", list(
     basetable  = quote(basetable::count(d, by = "gh", sort = FALSE)),
     data.table = quote(dt[, .N, by = gh]),
-    dplyr      = quote(dplyr::count(d, gh)))),
+    dplyr      = quote(dplyr::count(d, gh)),
+    collapse   = quote(collapse::fcount(d, gh)))),
   bench_one("sd by group", list(
     basetable  = quote(basetable::aggregate(d, by = "g", value = "x", fun = sd, sort = FALSE)),
     data.table = quote(dt[, list(x = sd(x)), by = g]),
-    dplyr      = quote(dplyr::summarise(dplyr::group_by(d, g), x = sd(x), .groups = "drop")))),
+    dplyr      = quote(dplyr::summarise(dplyr::group_by(d, g), x = sd(x), .groups = "drop")),
+    collapse   = quote(collapse::collap(d, x ~ g, collapse::fsd, sort = FALSE)))),
   bench_one("equi join", list(
     # basetable::merge() keeps input order; pin data.table to sort = FALSE so
     # neither side also sorts the joined result.
     basetable  = quote(basetable::merge(d, dim_tbl, by = "g")),
     data.table = quote(merge(dt, dmt, by = "g", sort = FALSE)),
-    dplyr      = quote(dplyr::inner_join(d, dim_tbl, by = "g")))),
+    dplyr      = quote(dplyr::inner_join(d, dim_tbl, by = "g")),
+    collapse   = quote(collapse::join(d, dim_tbl, on = "g", how = "inner", verbose = 0)))),
   bench_one("semi join", list(
     basetable  = quote(basetable::semimerge(d, dim_tbl, by = "g")),
     data.table = quote(dt[dmt, on = "g", nomatch = NULL]),
-    dplyr      = quote(dplyr::semi_join(d, dim_tbl, by = "g"))))
+    dplyr      = quote(dplyr::semi_join(d, dim_tbl, by = "g")),
+    collapse   = quote(collapse::join(d, dim_tbl, on = "g", how = "semi", verbose = 0))))
 )
 
 ops <- c("filter", "sort (string key)", "distinct", "count by group",
@@ -99,7 +113,7 @@ res <- do.call(rbind, lapply(marks, function(m) {
   )
 }))
 res$operation <- factor(res$operation, levels = ops)
-res$engine    <- factor(res$engine, levels = c("basetable", "data.table", "dplyr"))
+res$engine    <- factor(res$engine, levels = c("basetable", "data.table", "dplyr", "collapse"))
 
 ## ----raw----------------------------------------------------------------------
 marks[[which(ops == "sd by group")]][, c("engine", "min", "median", "itr/sec", "mem_alloc", "n_gc")]
@@ -136,7 +150,7 @@ ggplot(res, aes(engine, median_ms, fill = engine)) +
   facet_wrap(~operation, ncol = 2, scales = "free_x") +
   coord_flip() +
   scale_fill_manual(values = c(basetable = "#1b7837", data.table = "#762a83",
-                               dplyr = "#c2a5cf")) +
+                               dplyr = "#c2a5cf", collapse = "#e08214")) +
   labs(x = NULL, y = "Median time (ms)", fill = NULL) +
   theme_minimal(base_size = 11) +
   theme(legend.position = "none", strip.text = element_text(face = "bold"))
@@ -152,11 +166,12 @@ ggplot(res, aes(engine, mem_mb, fill = engine)) +
   facet_wrap(~operation, ncol = 2, scales = "free_x") +
   coord_flip() +
   scale_fill_manual(values = c(basetable = "#1b7837", data.table = "#762a83",
-                               dplyr = "#c2a5cf")) +
+                               dplyr = "#c2a5cf", collapse = "#e08214")) +
   labs(x = NULL, y = "Memory allocated (MB)", fill = NULL) +
   theme_minimal(base_size = 11) +
   theme(legend.position = "none", strip.text = element_text(face = "bold"))
 
 ## ----teardown, include=FALSE--------------------------------------------------
 options(basetable.threads = .old_threads)
+if (HAVE_CL) collapse::set_collapse(nthreads = .old_collapse)
 

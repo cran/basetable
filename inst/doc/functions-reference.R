@@ -196,8 +196,8 @@ tryCatch(assertunique(mtcars, "cyl"), error = function(e) conditionMessage(e))
 tryCatch(assertvalues(mtcars, "am", allowed = c(0, 1)), error = function(e) "passes")
 
 ## ---------------------------------------------------------------------------------------
-assert_cols(mtcars, c("mpg", "cyl")) |> invisible()
-tryCatch(assert_key(mtcars, "cyl"), error = function(e) conditionMessage(e))
+assertcols(mtcars, c("mpg", "cyl")) |> invisible()
+tryCatch(assertkey(mtcars, "cyl"), error = function(e) conditionMessage(e))
 
 ## ---------------------------------------------------------------------------------------
 invalidrows(mtcars, mpg > 15)
@@ -231,7 +231,7 @@ duplicaterows(data.frame(x = c(1, 1, 2)))
 duplicatekeys(dup_df, "id")
 
 ## ---------------------------------------------------------------------------------------
-duplicated_keys(dup_df, "id")
+duplicatedkeys(dup_df, "id")
 
 ## ---------------------------------------------------------------------------------------
 messy <- data.frame(`First Name` = 1, `2nd_col` = 2, check.names = FALSE)
@@ -239,7 +239,7 @@ cleannames(messy)
 commonnames(mtcars, iris)
 
 ## ---------------------------------------------------------------------------------------
-common_names(mtcars, iris)
+commonnames(mtcars, iris)
 
 ## ---------------------------------------------------------------------------------------
 visits <- data.frame(

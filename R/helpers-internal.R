@@ -47,13 +47,35 @@ bt_rbind_fill <- function(dfs, fill = TRUE, id = NULL) {
   }
   id_values <- names(dfs)
   dfs <- lapply(unname(dfs), bt_as_data_frame)
-  bt_as_data_table(.Call(
+  out <- .Call(
     bt_rbind_,
     dfs,
     isTRUE(fill),
     if (is.null(id)) NULL else as.character(id)[[1L]],
     if (is.null(id_values)) NULL else as.character(id_values)
-  ))
+  )
+  # The native bind stores factors as their labels. Like base::rbind(), a
+  # column that is a factor in every input holding it stays a factor, with
+  # the union of levels in input order.
+  for (nm in names(out)) {
+    held <- Filter(function(d) nm %in% names(d), dfs)
+    if (length(held) && all(vapply(held, function(d) is.factor(d[[nm]]), logical(1)))) {
+      lev <- unique(unlist(lapply(held, function(d) levels(d[[nm]])), use.names = FALSE))
+      out[[nm]] <- factor(out[[nm]], levels = lev)
+    }
+  }
+  # The native bind has no list type. A column that is a list in any input
+  # is rebuilt as a list-column: atomic values become one cell each, and rows
+  # from inputs without the column get NULL cells.
+  for (nm in names(out)) {
+    is_list <- vapply(dfs, function(d) is.list(d[[nm]]), logical(1))
+    if (!any(is_list)) next
+    out[[nm]] <- unlist(lapply(dfs, function(d) {
+      v <- d[[nm]]
+      if (is.null(v)) vector("list", nrow(d)) else if (is.list(v)) unclass(v) else as.list(v)
+    }), recursive = FALSE, use.names = FALSE)
+  }
+  bt_as_data_table(out)
 }
 
 # Comparison-operator codes shared with the native range-join kernel.
@@ -271,9 +293,7 @@ bt_clean_names <- function(nms, method = c("unique", "universal", "minimal")) {
   cleaned <- gsub("^_+|_+$", "", cleaned)
   cleaned[cleaned == ""] <- "x"
 
-  if (method == "universal") {
-    cleaned <- make.names(cleaned, unique = FALSE)
-  }
+  cleaned <- tolower(make.names(cleaned, unique = FALSE))
 
   make.unique(cleaned, sep = "_")
 }
@@ -490,11 +510,19 @@ bt_aggregate_fun_name <- function(expr, value) {
   if (is.character(value) && length(value) == 1L) {
     return(value)
   }
-  if (is.symbol(expr)) {
-    nm <- as.character(expr)
-    if (nm %in% c("sum", "mean", "min", "max", "var", "sd", "n", "length")) {
-      return(nm)
+  # Match the function itself, so `f <- min; fun = f` takes the same native
+  # path as `fun = min`, and a user function that happens to be named `min`
+  # is never replaced by the native reducer.
+  if (is.function(value)) {
+    native <- list(sum = base::sum, mean = base::mean, min = base::min,
+                   max = base::max, var = stats::var, sd = stats::sd,
+                   length = base::length)
+    for (nm in names(native)) {
+      if (identical(value, native[[nm]])) return(nm)
     }
+  }
+  if (is.symbol(expr) && identical(as.character(expr), "n")) {
+    return("n")
   }
   NULL
 }

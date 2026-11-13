@@ -135,10 +135,10 @@ uniquerows <- function(data, cols = NULL, .keep_all = FALSE, ...) {
 #' @param data A data.frame.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
-#' @return See [duplicated_keys()].
+#' @return See [duplicatedkeys()].
 #' @export
 duplicatekeys <- function(data, by) {
-  duplicated_keys(data, by)
+  duplicatedkeys(data, by)
 }
 
 #' Duplicated column names
@@ -150,17 +150,6 @@ duplicatekeys <- function(data, by) {
 duplicatenames <- function(data) {
   df <- bt_as_data_frame(data)
   names(df)[duplicated(names(df))]
-}
-
-#' Column names shared by two tables
-#'
-#' @param x An atomic vector.
-#' @param y An atomic vector, data.frame, or basetable, depending on the function.
-#'
-#' @return See [common_names()].
-#' @export
-commonnames <- function(x, y) {
-  common_names(x, y)
 }
 
 #' Clean column names to a unique, syntactic form
@@ -924,7 +913,7 @@ applyby <- function(data, by, fun, ..., bind = FALSE, id = ".group") {
   bt_rbind_fill(out, fill = TRUE, id = id)
 }
 
-#' Distinct keys of `x` absent from `y`
+#' Rows of `x` whose key is absent from `y`
 #'
 #' @param x An atomic vector.
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.
@@ -957,6 +946,10 @@ matchedkeys <- function(x, y, by) {
 }
 
 #' Cardinality of a join key relationship
+#'
+#' Uniqueness is checked across all rows of each input, including unmatched
+#' keys. Repeated missing keys are treated as duplicates. This describes the
+#' inputs, rather than only the keys that would match in a join.
 #'
 #' @param x An atomic vector.
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.
@@ -1033,10 +1026,11 @@ unionrows <- function(x, y, by = NULL) {
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
-#' @return Rows of `x` also present in `y`.
+#' @return Rows of `x` also present in `y`. With `by = NULL`, rows are
+#'   compared on every column of `x`, all of which must exist in `y`.
 #' @export
 intersectrows <- function(x, y, by = NULL) {
-  if (is.null(by)) return(bt_as_data_table(intersect(bt_as_data_frame(x), bt_as_data_frame(y))))
+  by <- by %||% bt_all_row_cols(x, y)
   bt_as_data_table(matchedkeys(x, y, by))
 }
 
@@ -1046,11 +1040,23 @@ intersectrows <- function(x, y, by = NULL) {
 #' @param y An atomic vector, data.frame, or basetable, depending on the function.
 #' @param by Character vector of column names identifying groups or join keys.
 #'
-#' @return Rows of `x` absent from `y`.
+#' @return Rows of `x` absent from `y`. With `by = NULL`, rows are compared
+#'   on every column of `x`, all of which must exist in `y`.
 #' @export
 diffrows <- function(x, y, by = NULL) {
-  if (is.null(by)) return(bt_as_data_table(setdiff(bt_as_data_frame(x), bt_as_data_frame(y))))
+  by <- by %||% bt_all_row_cols(x, y)
   bt_as_data_table(unmatchedkeys(x, y, by))
+}
+
+# Whole-row key for the set verbs: every column of `x`, required in `y`.
+bt_all_row_cols <- function(x, y) {
+  cols <- names(x)
+  missing <- setdiff(cols, names(y))
+  if (length(missing)) {
+    stop("`y` is missing column(s) of `x`: ", paste(missing, collapse = ", "),
+         "; supply `by`.", call. = FALSE)
+  }
+  cols
 }
 
 #' Compare two tables' rows for equality
@@ -1101,11 +1107,15 @@ tolong <- function(data, cols, names = "variable", values = "value", idcols = NU
 #' Reshape rows into columns
 #'
 #' @param data A data.frame.
-#' @param names Name for the resulting key/value column, depending on the function.
-#' @param values Vector or list of replacement values.
-#' @param idcols Columns to keep as row identifiers.
-#' @param fun Function applied to each element, column, or group.
-#' @param fill Value used for positions where no window/result is available.
+#' @param names Column whose values become the new column names.
+#' @param values Column whose values fill the new columns.
+#' @param idcols Columns to keep as row identifiers. Defaults to every column
+#'   other than `names` and `values`.
+#' @param fun Function that reduces the values falling in one cell. When
+#'   `NULL` (the default), each cell takes its single value; if any cell holds
+#'   more than one value, cells are counted with `length()` and a message says
+#'   so.
+#' @param fill Value used for cells with no matching row.
 #'
 #' @return A wide-format basetable.
 #' @export
@@ -1113,8 +1123,6 @@ towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
   df <- bt_as_data_frame(data)
   idcols <- if (is.null(idcols)) setdiff(names(df), c(names, values)) else bt_resolve_cols(df, idcols)
   bt_resolve_cols(df, c(names, values, idcols))
-  agg <- fun %||% length
-
   name_vec <- as.character(df[[names]])
   value_vec <- df[[values]]
   lvls <- unique(name_vec)
@@ -1128,6 +1136,17 @@ towide <- function(data, names, values, idcols = NULL, fun = NULL, fill = NA) {
     gid <- rep(1L, nrow(df))
     out <- list()
     ng <- 1L
+  }
+
+  agg <- fun
+  if (is.null(agg)) {
+    if (anyDuplicated(data.frame(gid, name_vec))) {
+      message("`towide()`: some cells hold several values; counting them with `length()`. ",
+              "Supply `fun` to choose a summary.")
+      agg <- length
+    } else {
+      agg <- function(v) v
+    }
   }
 
   for (lvl in lvls) {
@@ -2276,22 +2295,6 @@ assertnames <- function(data, names) {
   if (!all(names %in% base::names(bt_as_data_frame(data)))) stop("Missing required names.", call. = FALSE)
   invisible(data)
 }
-#' Assert that columns exist (alias)
-#'
-#' @param data A data.frame.
-#' @param cols Character vector of column names.
-#'
-#' @return See [assert_cols()].
-#' @export
-assertcols <- function(data, cols) assert_cols(data, cols)
-#' Assert that a key is unique (alias)
-#'
-#' @param data A data.frame.
-#' @param by Character vector of column names identifying groups or join keys.
-#'
-#' @return See [assert_key()].
-#' @export
-assertkey <- function(data, by) assert_key(data, by)
 #' Assert that a row-wise condition holds for every row
 #'
 #' @param data A data.frame.

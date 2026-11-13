@@ -1,3 +1,17 @@
+#' Aggregate values by group
+#'
+#' Compute grouped summaries for one or more value columns. When \code{data} is a
+#' single file path, the file is scanned once and only the grouping and value
+#' fields are extracted, without materialising the other columns.
+#' @param data A data frame, or a single path to a delimited text file for the fused one-pass file mode.
+#' @param by Character vector of grouping columns.
+#' @param value Optional character vector of value columns to summarize.
+#' @param fun Summary function applied to each value column. In file mode this is one or more of \code{"sum"}, \code{"mean"}, \code{"var"}, \code{"sd"}, \code{"min"}, \code{"max"}, \code{"n"} and defaults to \code{"sum"}.
+#' @param ... Additional arguments passed to \code{fun}; in file mode, reader options such as \code{where}, \code{delim}, \code{n_threads}.
+#' @param na.rm Whether to remove missing values before summarizing (defaults to \code{TRUE} in file mode). A custom \code{fun} receives \code{na.rm} when it has an \code{na.rm} argument, or through \code{...} when \code{na.rm} is set explicitly.
+#' @param sort Whether to sort output rows by group.
+#' @return A basetable containing one row per group.
+#' @export
 aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TRUE) {
   if (is.character(data) && length(data) == 1L) {
     return(aggregate_from_file(
@@ -26,7 +40,9 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
 
   f <- match.fun(fun)
   f_args <- names(formals(args(f)))
-  forward_na_rm <- "na.rm" %in% f_args || "..." %in% f_args
+  # pass na.rm when fun declares it, or through `...` only when the caller set it,
+  # so functions such as paste() do not receive an unrequested na.rm = FALSE
+  forward_na_rm <- "na.rm" %in% f_args || (!missing(na.rm) && "..." %in% f_args)
 
   group_info <- bt_engine_groups(df, by)
   groups <- bt_group_rows(group_info$id)
@@ -44,7 +60,9 @@ aggregate <- function(data, by, value = NULL, fun, ..., na.rm = FALSE, sort = TR
     }
     vals[[g]] <- as.data.frame(row, stringsAsFactors = FALSE)
   }
-  out <- bt_as_data_table(cbind(bt_as_data_frame(keys), do.call(rbind, vals)))
+  vals <- if (length(vals)) do.call(rbind, vals) else
+    as.data.frame(stats::setNames(rep(list(numeric()), length(value)), value))
+  out <- bt_as_data_table(cbind(bt_as_data_frame(keys), vals))
   if (sort && length(by) > 0L) {
     out <- bt_engine_order(out, by = by)
   }
